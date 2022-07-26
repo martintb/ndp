@@ -8,6 +8,7 @@ import math
 import re
 import os
 import csv
+import json
 from datetime import datetime
 
 
@@ -23,8 +24,19 @@ class ndp():
         
         
         self.instrument = {
-            "Configuration" : "Hello"
-            }
+            "Configuration" : "Default",
+            "Beam Energy": 1472.35,
+            "Num Channels": 4096,
+            "Zero Channel": 2077,
+            "Mon Peak Channels": [
+                1900,
+                2901
+            ],
+            "Calib Coeffs": [
+                0.7144,
+                -12.45
+            ]
+        }
         
         self.detector = {
             "Name" : "Lynx",
@@ -93,83 +105,84 @@ class ndp():
         
         self.atom = {
             "He" : {
-                "Cross Section" : 5322.73,
+                "Cross Sec" : 5322.73,
                 "Abundance" : 0.00000134
                 },
             "Li" : {
-                "Cross Section" : 939.09,
+                "Cross Sec" : 939.09,
                 "Abundance" : 0.0759
                 },
             "B" : {
-                "Cross Section" : 3600.48,
+                "Cross Sec" : 3600.48,
                 "Abundance" : 0.196
                 },
             "N" : {
-                "Cross Section" : 1.86,
+                "Cross Sec" : 1.86,
                 "Abundance" : 0.99636
                 },
             }
 
     
-    def readconfig(self, path, configfilename = "NDPInstrumParms.dat"):
+    def readconfig(self, config_filename = "NDPInstrumParms.dat"):
         """
         Read NDPReduce configuration file
         """
         
-        filename = path + configfilename
-        with open(filename) as f:
-            lines = f.readlines()
-            self.instrument["Configuration"] = lines[4][21:]
-            self.instrument["Beam Energy"] = float(lines[5][18:])
-            self.instrument["Num Channels"] = int(lines[6][19:])
-            self.instrument["Zero Channel"] = int(lines[7][13:])
-            self.instrument["Alpha Channels"] = [int(lines[9]), int(lines[10])]
-            self.instrument["Calib Coeffs"] = np.array([float(lines[12]), float(lines[13])])
-        
+        with open(config_filename) as f:
+            self.instrument = json.load(f)
         return
 
-    def runschema(self, path, schemafilename = "NDPDataSchema.dat"):
-        
 
-        datatypes=["TRIM", "Bgd Dat", "Bgd Mon", "Ref Dat", "Ref Mon", "Sam Dat", "Sam Mon"]
-        pathline = [3, 7, 9, 13, 15, 19, 21] 
-        fileline = [4, 8, 10, 14, 16, 20, 22]
-
-        self.readschema(path, schemafilename, datatypes, pathline, fileline)
-        
-        self.evalTRIM(self.data['TRIM']['Path'])
-        self.chan2depth()
-        
-        # Remove TRIM from datatypes
-        datatypes=["Bgd Dat", "Bgd Mon", "Ref Dat", "Ref Mon", "Sam Dat", "Sam Mon"]
-        for dt in datatypes:
-             self.loadNDP(dt, self.data[dt]['Path'])
-        
-        self.deadtime()
-        self.normalize()
-        self.correct()
-        self.ref_integrate()
-        self.scale2ref()
-        self.bin_channels()
-        
-        return
-        
-    def readschema(self, path, filename, datatypes, pathline, fileline):
+    def runschema(self, schemafilename = "schema.txt"):
         """
-        Read NDPReduce Data Schema file, if full schema not already developed then build and save.
+        Run the operations listed in the schema file
+        """
+
+        self.readschema(schemafilename)
+        
+        ops = self.schema['Operations']
+        
+        for op in ops:
+            if 'Eval' in op:
+                self.data['TRIM']["Path"] = self.schema['TRIM']['Path']
+                filelist = os.listdir(self.data['TRIM']["Path"])
+                self.data['TRIM']["Files"] = [x for x in filelist if self.schema['TRIM']['Tag'] in x] 
+                self.evalTRIM(self.schema['TRIM']['Path'])
+                self.chan2depth()
+            if 'Load' in op:
+                for dt in self.schema['Load']:
+                    self.data[dt]["Path"] = self.schema[dt]['Path']
+                    filelist = os.listdir(self.data[dt]["Path"])
+                    self.data[dt]["Files"] = [x for x in filelist if self.schema[dt]['Tag'] in x] 
+                    self.loadNDP(dt)
+            if 'Norm' in op:
+                for dt in self.schema['Norm']:
+                    self.normalize(dt)
+            if 'Corr' in op:
+                for dt in self.schema['Corr']:
+                    self.correct(dt)
+            if 'Absolute' in op:
+                for dt in self.schema['Absolute']:
+                    self.cross_sec("B", "Sam Dat")
+                    self.cross_sec("B", "Ref Dat")
+                    self.ref_integrate()
+                    self.scale2ref("Sam Dat")                    
+            if 'Bin' in op:
+                bin_size = int(self.schema['Bin'])
+                self.bin_channels(bin_size)
+
+        return
+
+        
+    def readschema(self, filename):
+        """
+        Read data schema file
         """
                    
-        with open((path+filename)) as f:
-            lines = f.readlines()
+        with open(filename) as f:
+            self.schema = json.load(f)
         
-        i=0
-        for dt in datatypes:
-            line = lines[int(pathline[i])].split(": ", 1)
-            self.data[dt]["Path"] = line[1][:-1]
-            filelist = os.listdir(self.data[dt]["Path"])
-            line = lines[fileline[i]].split(": ", 1)
-            self.data[dt]["Files"] = [x for x in filelist if line[1][:-1] in x] 
-            i += 1
+        
         
         return
     
@@ -219,7 +232,7 @@ class ndp():
         return
     
     
-    def loadNDP(self, dt, path):
+    def loadNDP(self, dt):
         """
         Function to load a list of NDP data files of a given datatype (Sam Dat, Sam Mon, etc),
         load header info and sum of counts/channel into ndp.data
@@ -230,12 +243,11 @@ class ndp():
         numfiles = len(filelist)
         numchannels = self.instrument["Num Channels"]
         
-
         if("Channel Sum" not in self.data[dt]["Operations"]):
                 self.data[dt]["Operations"].append("Channel Sum")
         
         for filenum in range(numfiles):
-            ndp_file = path + filelist[filenum]
+            ndp_file = filelist[filenum]
             with open(ndp_file) as f:
                 lines = f.readlines() #reads all of the file into a numbered list of strings
                 self.data[dt]["Detector"].append(lines[0][12:-1])
@@ -252,10 +264,12 @@ class ndp():
                     counts = lines[channel+8].split()
                     self.data[dt]["Counts"][channel] += float(counts[1])
         
+        self.deadtime(dt)
+
         return
 
     
-    def deadtime(self, datatypes=["Sam Dat", "Sam Mon", "Bgd Dat", "Bgd Mon", "Ref Dat", "Ref Mon"]):
+    def deadtime(self, dt):
         """
         Returns a copy of ndp.data with deadtime corrected counts for each of the
         sample types. Optional argument to specify the datatypes.
@@ -265,21 +279,22 @@ class ndp():
         old_settings = np.seterr(all='ignore')  #seterr to known value
         np.seterr(all='ignore')
     
-        for datatype in datatypes:
-            if("Deadtime Scaled" not in self.data[datatype]["Operations"]):
-                self.data[datatype]["Operations"].append("Deadtime Scaled")
-            livetime = self.data[datatype]["Live Time"]
-            realtime = self.data[datatype]["Real Time"]
-            self.data[datatype]["Dt ratio"] = livetime/realtime
-            self.data[datatype]["Counts/Dt"] = self.data[datatype]["Counts"]*realtime/livetime
-            self.data[datatype]["Counts/Dt Uncert"] = np.nan_to_num(np.divide(
-                self.data[datatype]["Counts/Dt"],np.sqrt(self.data[datatype]["Counts"])))
+
+        if("Deadtime Scaled" not in self.data[dt]["Operations"]):
+            self.data[dt]["Operations"].append("Deadtime Scaled")
+        livetime = self.data[dt]["Live Time"]
+        realtime = self.data[dt]["Real Time"]
+        self.data[dt]["Dt ratio"] = livetime/realtime
+        self.data[dt]["Counts/Dt"] = self.data[dt]["Counts"]*realtime/livetime
+        self.data[dt]["Counts/Dt Uncert"] = np.nan_to_num(np.divide(
+            self.data[dt]["Counts/Dt"],np.sqrt(self.data[dt]["Counts"])))
     
         np.seterr(**old_settings)
     
         return
 
-    def normalize(self, datatypes=["Sam Dat", "Bgd Dat", "Ref Dat"]):
+
+    def normalize(self, dt):
         """
         Calculate (data file counts)/(monitor file counts)
     
@@ -289,78 +304,80 @@ class ndp():
         old_settings = np.seterr(all='ignore')  #seterr to known value
         np.seterr(all='ignore')
 
-        for dt in datatypes:
-            if("Normalized" not in self.data[dt]["Operations"]):
-                self.data[dt]["Operations"].append("Normalized")
+        dt_dat = dt + " Dat"
+        dt_mon = dt + " Mon"
+        
+        if("Normalized" not in self.data[dt_dat]["Operations"]):
+            self.data[dt_dat]["Operations"].append("Normalized")
 
-            mon_type = dt[0:4]+"Mon"
-            #Sum over range set to capture 10B alpha peaks (channels 1900-2900)
-            lowchan, hichan = self.instrument["Alpha Channels"]
-            mon_sum = np.sum(self.data[mon_type]["Counts/Dt"][lowchan:hichan])        
-            self.data[dt]["Monitor"] = mon_sum
-            self.data[dt]["Monitor Uncert"] = math.sqrt(mon_sum)    
+        #Sum over range set to capture 10B alpha peaks (channels 1900-2900)
+        lowchan, hichan = self.instrument["Mon Peak Channels"]
+        mon_sum = np.sum(self.data[dt_mon]["Counts/Dt"][lowchan:hichan])        
+        self.data[dt_dat]["Monitor"] = mon_sum
+        self.data[dt_dat]["Monitor Uncert"] = math.sqrt(mon_sum)    
 
-            self.data[dt]["Norm Cts"] = self.data[dt]["Counts/Dt"]/self.data[dt]["Monitor"]
-            x2 = np.nan_to_num(np.power(self.data[dt]["Counts/Dt Uncert"]/self.data[dt]["Counts/Dt"],2))
-            y2 = math.pow(self.data[dt]["Monitor Uncert"]/self.data[dt]["Monitor"],2)
-            self.data[dt]["Norm Cts Uncert"] = self.data[dt]["Norm Cts"]*np.sqrt(x2+y2)
+        self.data[dt_dat]["Norm Cts"] = self.data[dt_dat]["Counts/Dt"]/self.data[dt_dat]["Monitor"]
+        x2 = np.nan_to_num(np.power(self.data[dt_dat]["Counts/Dt Uncert"]/self.data[dt_dat]["Counts/Dt"],2))
+        y2 = math.pow(self.data[dt_dat]["Monitor Uncert"]/self.data[dt_dat]["Monitor"],2)
+        self.data[dt_dat]["Norm Cts Uncert"] = self.data[dt_dat]["Norm Cts"]*np.sqrt(x2+y2)
 
         np.seterr(**old_settings)
 
         return
     
 
-    def correct(self, datatypes=["Sam Dat", "Ref Dat"]):
+    def correct(self, dt):
         """
         Subtract background and return a corrected data file
         
         data_norm, bkgd_norm are normalized data objects from ndp_norm()
         """
-    
-        for dt in datatypes:
-            if("Corrected" not in self.data[dt]["Operations"]):
-                self.data[dt]["Operations"].append("Corrected")
+        
+        dt_dat = dt + " Dat"
+        if("Corrected" not in self.data[dt_dat]["Operations"]):
+            self.data[dt_dat]["Operations"].append("Corrected")
 
-            self.data[dt]["Corr Cts"] = self.data[dt]["Norm Cts"]-self.data["Bgd Dat"]["Norm Cts"]
-            x2 = np.power(self.data[dt]["Norm Cts Uncert"],2)
-            y2 = np.power(self.data["Bgd Dat"]["Norm Cts Uncert"],2)
-            self.data[dt]["Corr Cts Uncert"] = np.sqrt(x2+y2)
+        self.data[dt_dat]["Corr Cts"] = self.data[dt_dat]["Norm Cts"]-self.data["Bgd Dat"]["Norm Cts"]
+        x2 = np.power(self.data[dt_dat]["Norm Cts Uncert"],2)
+        y2 = np.power(self.data["Bgd Dat"]["Norm Cts Uncert"],2)
+        self.data[dt_dat]["Corr Cts Uncert"] = np.sqrt(x2+y2)
     
         return
 
-    def cross_sec(self, atom, datatype = ["Sam Dat"]):
+
+    def cross_sec(self, atom, dt):
         """
         Define the cross section of the sample
         """
         
-        self.data[datatype]["Atom"] = "B"
-        self.data[datatype]["Atom Cross Sec"] = 3600.48
-        self.data[datatype]["Atom Conc"] = 5.22e15
-        self.data[datatype]["Atom Conc Uncert"] = 3e13
-        self.data[datatype]["Atom Branch Frac"] = 0.94
-        self.data[datatype]["Atom Abundance"] = 0.196
+        self.data[dt]["Atom"] = atom
+        self.data[dt]["Atom Cross Sec"] = self.atom[atom]['Cross Sec']
+        self.data[dt]["Atom Abundance"] = self.atom[atom]['Abundance']
+        self.data[dt]["Atom Conc"] = 5.22e15
+        self.data[dt]["Atom Conc Uncert"] = 3e13
+        self.data[dt]["Atom Branch Frac"] = 0.94
 
             
-    def ref_integrate(self, datatypes=["Ref Dat"]):
+    def ref_integrate(self):
         """
         Integrate the alpha peaks of the reference data set
         Also, set atomic concentration field here for now
         """
 
-        for dt in datatypes:
-            if("Integrated Peaks" not in self.data[dt]["Operations"]):
-                self.data[dt]["Operations"].append("Integrated Peaks")
+        dt = 'Ref Dat'
+        if("Integrated Peaks" not in self.data[dt]["Operations"]):
+            self.data[dt]["Operations"].append("Integrated Peaks")
 
-            self.data[dt]["alpha*"] = np.sum(self.data[dt]["Corr Cts"][1791:2142])        
-            self.data[dt]["alpha"] = np.sum(self.data[dt]["Corr Cts"][2291:2592])        
-            cts_uncert2 = np.power(self.data[dt]["Corr Cts Uncert"], 2)
-            self.data[dt]["alpha* Uncert"] = math.sqrt(np.sum(cts_uncert2[1791:2142]))
-            self.data[dt]["alpha Uncert"] = math.sqrt(np.sum(cts_uncert2[2291:2592]))
+        self.data[dt]["alpha*"] = np.sum(self.data[dt]["Corr Cts"][1791:2142])        
+        self.data[dt]["alpha"] = np.sum(self.data[dt]["Corr Cts"][2291:2592])        
+        cts_uncert2 = np.power(self.data[dt]["Corr Cts Uncert"], 2)
+        self.data[dt]["alpha* Uncert"] = math.sqrt(np.sum(cts_uncert2[1791:2142]))
+        self.data[dt]["alpha Uncert"] = math.sqrt(np.sum(cts_uncert2[2291:2592]))
             
         return
     
     
-    def scale2ref(self, datatypes=["Sam Dat"]):
+    def scale2ref(self, dt):
         """
         Use reference sample data to convert counts to number of atoms
         """
@@ -368,35 +385,35 @@ class ndp():
         old_settings = np.seterr(all='ignore')  #seterr to known value
         np.seterr(all='ignore')
 
-        for dt in datatypes:
-            if("Scaled to Reference" not in self.data[dt]["Operations"]):
-                self.data[dt]["Operations"].append("Scaled to Reference")
-                
-            alpha_cts = self.data["Ref Dat"]["alpha*"]
-            sample_cross = self.data[dt]["Atom Cross Sec"]
-            ref_cross = self.data["Ref Dat"]["Atom Cross Sec"]
-            ref_conc = self.data[dt]["Atom Conc"]
-            branch_frac = self.data[dt]["Atom Branch Frac"]
-            abundance = self.data[dt]["Atom Abundance"]
+        if("Scaled to Reference" not in self.data[dt]["Operations"]):
+            self.data[dt]["Operations"].append("Scaled to Reference")
+            
+        alpha_cts = self.data["Ref Dat"]["alpha*"]
+        sample_cross = self.data[dt]["Atom Cross Sec"]
+        ref_cross = self.data["Ref Dat"]["Atom Cross Sec"]
+        ref_conc = self.data[dt]["Atom Conc"]
+        branch_frac = self.data[dt]["Atom Branch Frac"]
+        abundance = self.data[dt]["Atom Abundance"]
+    
+        scale_coeff = (ref_conc * ref_cross) / (alpha_cts * sample_cross)
+        self.data[dt]["Atoms/cm2"] = scale_coeff * self.data[dt]["Corr Cts"]
+        self.data[dt]["Atoms/cm2"] /= (branch_frac*abundance)
         
-            scale_coeff = (ref_conc * ref_cross) / (alpha_cts * sample_cross)
-            self.data[dt]["Atoms/cm2"] = scale_coeff * self.data[dt]["Corr Cts"]
-            self.data[dt]["Atoms/cm2"] /= (branch_frac*abundance)
-            
-            ratio1 = math.pow(self.data["Ref Dat"]["alpha* Uncert"]/alpha_cts,2)
-            ratio2 = math.pow(self.data["Ref Dat"]["Atom Conc Uncert"]/ref_conc,2)
-            ratio3 = np.nan_to_num(np.power(self.data[dt]["Corr Cts Uncert"]/self.data[dt]["Corr Cts"], 2))
-            self.data[dt]["Atoms/cm2 Uncert"] = self.data[dt]["Atoms/cm2"]*np.sqrt(ratio1 + ratio2 + ratio3)
-            
-            self.data[dt]["Atoms/cm3"] = np.nan_to_num(self.data[dt]["Atoms/cm2"]/self.detector["Del Depth"])
+        ratio1 = math.pow(self.data["Ref Dat"]["alpha* Uncert"]/alpha_cts,2)
+        ratio2 = math.pow(self.data["Ref Dat"]["Atom Conc Uncert"]/ref_conc,2)
+        ratio3 = np.nan_to_num(np.power(self.data[dt]["Corr Cts Uncert"]/self.data[dt]["Corr Cts"], 2))
+        self.data[dt]["Atoms/cm2 Uncert"] = self.data[dt]["Atoms/cm2"]*np.sqrt(ratio1 + ratio2 + ratio3)
+        
+        self.data[dt]["Atoms/cm3"] = np.nan_to_num(self.data[dt]["Atoms/cm2"]/self.detector["Del Depth"])
 
-            ratio1 = np.nan_to_num(np.power(self.data[dt]["Atoms/cm2 Uncert"]/self.data[dt]["Atoms/cm2"],2))
-            ratio2 = np.nan_to_num(np.power(self.detector["Del Depth Uncert"]/self.detector["Del Depth"],2))
-            self.data[dt]["Atoms/cm3 Uncert"] = self.data[dt]["Atoms/cm3"]*np.sqrt(ratio1 + ratio2)
+        ratio1 = np.nan_to_num(np.power(self.data[dt]["Atoms/cm2 Uncert"]/self.data[dt]["Atoms/cm2"],2))
+        ratio2 = np.nan_to_num(np.power(self.detector["Del Depth Uncert"]/self.detector["Del Depth"],2))
+        self.data[dt]["Atoms/cm3 Uncert"] = self.data[dt]["Atoms/cm3"]*np.sqrt(ratio1 + ratio2)
 
         np.seterr(**old_settings)
 
         return
+    
     
     def bin_channels(self, bin_size=21):
         """
@@ -451,7 +468,6 @@ class ndp():
         return
 
     
-    
     def chan2depth(self):
         """
         Convert channels to energy and then to a relative depth with uncertainties
@@ -481,6 +497,7 @@ class ndp():
         self.detector["Del Depth Uncert"] = 0.05 * self.detector["Del Depth"]
         
         return
+
 
     def saveAtoms(self, path, filename):
         """
