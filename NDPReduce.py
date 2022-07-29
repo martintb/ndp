@@ -220,6 +220,8 @@ class NdpData():
                     counts = lines[channel+8].split()
                     self.data[dt]["Counts"][channel] += float(counts[1])
     
+        self.deadtime(dt)
+        
         return
         
     def readschema(self, filename):
@@ -564,28 +566,20 @@ class NdpData():
         
         for dkey in data_cols:
             if dkey == 'Channels':
-                print('Channels')
                 columns[i][:] = self.detector['Channels Binned']
             if dkey == 'Energy':
-                print('Energy')
                 columns[i][:] = self.detector['Energy Binned']
             if dkey == 'Depth':
-                print('Depth')
                 columns[i][:] = self.detector['Depth Binned']
             if dkey == 'Counts':
-                print('Counts')
                 columns[i][:] = self.data['Sam Dat']['Counts Binned']
             if dkey == 'Atoms/cm2':
-                print('A/cm2')
                 columns[i][:] = self.data['Sam Dat']['Atoms/cm2 Binned']
             if dkey == 'Atoms/cm2 Uncert':
-                print('A/cm2 un')
                 columns[i][:] = self.data['Sam Dat']['Atoms/cm2 Binned Uncert']
             if dkey == 'Atoms/cm3':
-                print('A/cm3')
                 columns[i][:] = self.data['Sam Dat']['Atoms/cm3 Binned']
             if dkey == 'Atoms/cm3 Uncert':
-                print('A/cm3 un')
                 columns[i][:] = self.data['Sam Dat']['Atoms/cm3 Binned Uncert']
             i += 1
         
