@@ -14,12 +14,12 @@ from datetime import datetime
 
 class NdpData():
     """
-    Class that defines the data object for neutron depth profiling (NDP).
-    Data object describes values collected for a single sample, including
-    sample, background, and reference with associated monitors and
-    relevant parameters required for data processing.
-    
-    ndp.data is intended to provide enough information to recreate the entire data reduction
+    Modules that process neutron depth profiling (NDP) data.
+    schema = a JSON file with parameters describing input files and other parameters.
+    instrument = data structure defining parameters related to the instrument
+    data = object that stores the entire data reduction process
+
+    output = user defined comma separated value text file with 2 to 6 columns    
     """
     
     def __init__(self):
@@ -125,7 +125,7 @@ class NdpData():
             }
 
     
-    def readconfig(self, config_filename = "NDPInstrumParms.dat"):
+    def readconfig(self, config_filename):
         """
         Read NDPReduce configuration file
         """
@@ -135,11 +135,12 @@ class NdpData():
         return
 
 
-    def runschema(self, schemafilename = "schema.txt"):
+    def runschema(self, schemafilename = "schema.txt", configfilename = "config.json"):
         """
         Run the operations listed in the schema file
         """
 
+        self.readconfig(configfilename)
         bin_flag = True #Bin op must run, even if bin size is 1
         self.readschema(schemafilename)
         
@@ -148,15 +149,13 @@ class NdpData():
         for op in ops:
             if 'Eval' in op:
                 self.data['TRIM']["Path"] = self.schema['TRIM']['Path']
-                filelist = os.listdir(self.data['TRIM']["Path"])
-                self.data['TRIM']["Files"] = [x for x in filelist if self.schema['TRIM']['Tag'] in x] 
+                self.data['TRIM']["Files"] = self.schema['TRIM']['Files'] 
                 self.evalTRIM(self.schema['TRIM']['Path'])
                 self.chan2depth()
             if 'Load' in op:
                 for dt in self.schema['Load']:
                     self.data[dt]["Path"] = self.schema[dt]['Path']
-                    filelist = os.listdir(self.data[dt]["Path"])
-                    self.data[dt]["Files"] = [x for x in filelist if self.schema[dt]['Tag'] in x] 
+                    self.data[dt]["Files"] = self.schema[dt]["Files"]
                     self.load_NISTNDP(dt)
             if 'Norm' in op:
                 for dt in self.schema['Norm']:
@@ -195,6 +194,7 @@ class NdpData():
         
         """
     
+        path = self.data[dt]["Path"]
         filelist = self.data[dt]["Files"]
         numfiles = len(filelist)
         numchannels = self.instrument["Num Channels"]
@@ -203,7 +203,7 @@ class NdpData():
                 self.data[dt]["Operations"].append("Channel Sum")
         
         for filenum in range(numfiles):
-            ndp_file = filelist[filenum]
+            ndp_file = path + filelist[filenum]
             with open(ndp_file) as f:
                 lines = f.readlines() #reads all of the file into a numbered list of strings
                 self.data[dt]["Detector"].append(lines[0][12:-1])
