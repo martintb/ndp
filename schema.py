@@ -25,7 +25,17 @@ class schema():
         'Load' : ['Sam Dat'],
         'Norm' : [],
         'Corr' : [],
-        'Absolute' : [],
+        'Absolute' : {
+            'Ref Atom' : 'B',
+            'Ref Cross Sec' : 3600.48,
+            'Ref Abundance' : 0.196,
+            'Ref Conc' : 5.22e15,
+            'Ref Conc Uncert' : 3e13,
+            'Atom' : '',
+            'Cross Sec' : 0.0,
+            'Abundance' : 0.0,
+            'Branch Frac' : 0.0,
+            },
         'Bin' : 1,
         'Save' : {
             'Columns' : ['Channels', 'Counts'],
