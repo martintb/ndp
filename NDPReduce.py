@@ -105,25 +105,6 @@ class NdpData():
             },
         }
         
-        self.atom = {
-            "He" : {
-                "Cross Sec" : 5322.73,
-                "Abundance" : 0.00000134
-                },
-            "Li" : {
-                "Cross Sec" : 939.09,
-                "Abundance" : 0.0759
-                },
-            "B" : {
-                "Cross Sec" : 3600.48,
-                "Abundance" : 0.196
-                },
-            "N" : {
-                "Cross Sec" : 1.86,
-                "Abundance" : 0.99636
-                },
-            }
-
     
     def readconfig(self, config_filename):
         """
@@ -140,7 +121,6 @@ class NdpData():
         Run the operations listed in the schema file
         """
 
-        self.readconfig(configfilename)
         bin_flag = True #Bin op must run, even if bin size is 1
         self.readschema(schemafilename)
         
@@ -156,7 +136,7 @@ class NdpData():
                 for dt in self.schema['Load']:
                     self.data[dt]["Path"] = self.schema[dt]['Path']
                     self.data[dt]["Files"] = self.schema[dt]["Files"]
-                    self.load_NISTNDP(dt)
+                    self.loadfiles(dt)
             if 'Norm' in op:
                 for dt in self.schema['Norm']:
                     self.normalize(dt)
@@ -164,11 +144,17 @@ class NdpData():
                 for dt in self.schema['Corr']:
                     self.correct(dt)
             if 'Absolute' in op:
-                for dt in self.schema['Absolute']:
-                    self.cross_sec("B", "Sam Dat")
-                    self.cross_sec("B", "Ref Dat")
-                    self.ref_integrate()
-                    self.scale2ref("Sam Dat")                    
+                self.data['Ref Dat']["Atom"] = self.schema['Absolute']['Ref Atom'] 
+                self.data['Ref Dat']["Cross Sec"] = self.schema['Absolute']['Ref Cross Sec'] 
+                self.data['Ref Dat']["Abundance"] = self.schema['Absolute']['Ref Abundance']
+                self.data['Ref Dat']["Conc"] = self.schema['Absolute']['Ref Conc'] 
+                self.data['Ref Dat']["Conc Uncert"] = self.schema['Absolute']['Ref Conc Uncert']
+                self.data['Sam Dat']["Atom"] = self.schema['Absolute']['Atom'] 
+                self.data['Sam Dat']["Cross Sec"] = self.schema['Absolute']['Cross Sec'] 
+                self.data['Sam Dat']["Abundance"] = self.schema['Absolute']['Abundance']
+                self.data['Sam Dat']["Branch Frac"] = self.schema['Absolute']['Branch Frac']                    
+                self.ref_integrate()
+                self.scale2ref()                    
             if 'Bin' in op:
                 bin_size = int(self.schema['Bin'])
                 self.bin_channels(bin_size)
@@ -187,7 +173,7 @@ class NdpData():
             
         return
 
-    def load_NISTNDP(self, dt):
+    def loadfiles(self, dt):
         """
         Function to load a list of NDP data files of a given datatype (Sam Dat, Sam Mon, etc),
         load header info and sum of counts/channel into ndp.data
@@ -257,6 +243,13 @@ class NdpData():
         q = re.compile(r'[0-9]*E-[0-9]*')
         
         
+        # TRIM calculations are done for each material layer, with multiple
+        # files within a layer. TRIM provides the relative energy and depth to 
+        # the top interface. Offset determines the energy and depth of the
+        # top interface of the current layer.
+        
+        ev_offset = 0.0
+        depth_offset = 0.0
         for filenum in range(numfiles):
             trim_file = path + self.data["TRIM"]["Files"][filenum]
     
@@ -269,15 +262,17 @@ class NdpData():
                 i=0
                 for line in lines[12:]:        
                     m = p.search(line)
-                    ev[i] = float(m.group())
+                    ev[i] = float(m.group()) + ev_offset
                     m = q.search(line)
-                    depth[i] = float(m.group())
+                    depth[i] = float(m.group()) + depth_offset
                     i += 1
-                    
+            
             self.data["TRIM"]["Median KeV"][filenum+1] = np.median(ev)/1000
             self.data["TRIM"]["Thick"][filenum+1] = np.average(depth)/10
-            self.data["TRIM"]["Coeffs"] = np.polyfit(\
-                self.data["TRIM"]["Median KeV"], self.data["TRIM"]["Thick"], 2)
+        
+        # Fit a polynomial to KeV vs. Thickness, get the coefficients.
+        self.data["TRIM"]["Coeffs"] = np.polyfit(\
+            self.data["TRIM"]["Median KeV"], self.data["TRIM"]["Thick"], 2)
         
         return
     
@@ -358,19 +353,6 @@ class NdpData():
     
         return
     
-    
-    def cross_sec(self, atom, dt):
-        """
-        Define the cross section of the sample
-        """
-        
-        self.data[dt]["Atom"] = atom
-        self.data[dt]["Atom Cross Sec"] = self.atom[atom]['Cross Sec']
-        self.data[dt]["Atom Abundance"] = self.atom[atom]['Abundance']
-        self.data[dt]["Atom Conc"] = 5.22e15
-        self.data[dt]["Atom Conc Uncert"] = 3e13
-        self.data[dt]["Atom Branch Frac"] = 0.94
-    
             
     def ref_integrate(self):
         """
@@ -391,7 +373,7 @@ class NdpData():
         return
     
     
-    def scale2ref(self, dt):
+    def scale2ref(self):
         """
         Use reference sample data to convert counts to number of atoms
         """
@@ -399,30 +381,30 @@ class NdpData():
         old_settings = np.seterr(all='ignore')  #seterr to known value
         np.seterr(all='ignore')
     
-        if("Scaled to Reference" not in self.data[dt]["Operations"]):
-            self.data[dt]["Operations"].append("Scaled to Reference")
+        if("Scaled to Reference" not in self.data['Sam Dat']["Operations"]):
+            self.data['Sam Dat']["Operations"].append("Scaled to Reference")
             
         alpha_cts = self.data["Ref Dat"]["alpha*"]
-        sample_cross = self.data[dt]["Atom Cross Sec"]
-        ref_cross = self.data["Ref Dat"]["Atom Cross Sec"]
-        ref_conc = self.data[dt]["Atom Conc"]
-        branch_frac = self.data[dt]["Atom Branch Frac"]
-        abundance = self.data[dt]["Atom Abundance"]
+        sample_cross = self.data['Sam Dat']["Cross Sec"]
+        ref_cross = self.data["Ref Dat"]["Cross Sec"]
+        ref_conc = self.data['Ref Dat']["Conc"]
+        branch_frac = self.data['Sam Dat']["Branch Frac"]
+        abundance = self.data['Sam Dat']['Abundance']
     
         scale_coeff = (ref_conc * ref_cross) / (alpha_cts * sample_cross)
-        self.data[dt]["Atoms/cm2"] = scale_coeff * self.data[dt]["Corr Cts"]
-        self.data[dt]["Atoms/cm2"] /= (branch_frac*abundance)
+        self.data['Sam Dat']["Atoms/cm2"] = scale_coeff * self.data['Sam Dat']["Corr Cts"]
+        self.data['Sam Dat']["Atoms/cm2"] /= (branch_frac*abundance)
         
         ratio1 = math.pow(self.data["Ref Dat"]["alpha* Uncert"]/alpha_cts,2)
-        ratio2 = math.pow(self.data["Ref Dat"]["Atom Conc Uncert"]/ref_conc,2)
-        ratio3 = np.nan_to_num(np.power(self.data[dt]["Corr Cts Uncert"]/self.data[dt]["Corr Cts"], 2))
-        self.data[dt]["Atoms/cm2 Uncert"] = self.data[dt]["Atoms/cm2"]*np.sqrt(ratio1 + ratio2 + ratio3)
+        ratio2 = math.pow(self.data["Ref Dat"]["Conc Uncert"]/ref_conc,2)
+        ratio3 = np.nan_to_num(np.power(self.data['Sam Dat']["Corr Cts Uncert"]/self.data['Sam Dat']["Corr Cts"], 2))
+        self.data['Sam Dat']["Atoms/cm2 Uncert"] = self.data['Sam Dat']["Atoms/cm2"]*np.sqrt(ratio1 + ratio2 + ratio3)
         
-        self.data[dt]["Atoms/cm3"] = np.nan_to_num(self.data[dt]["Atoms/cm2"]/self.detector["Del Depth"])
+        self.data['Sam Dat']["Atoms/cm3"] = np.nan_to_num(self.data['Sam Dat']["Atoms/cm2"]/self.detector["Del Depth"])
     
-        ratio1 = np.nan_to_num(np.power(self.data[dt]["Atoms/cm2 Uncert"]/self.data[dt]["Atoms/cm2"],2))
+        ratio1 = np.nan_to_num(np.power(self.data['Sam Dat']["Atoms/cm2 Uncert"]/self.data['Sam Dat']["Atoms/cm2"],2))
         ratio2 = np.nan_to_num(np.power(self.detector["Del Depth Uncert"]/self.detector["Del Depth"],2))
-        self.data[dt]["Atoms/cm3 Uncert"] = self.data[dt]["Atoms/cm3"]*np.sqrt(ratio1 + ratio2)
+        self.data['Sam Dat']["Atoms/cm3 Uncert"] = self.data['Sam Dat']["Atoms/cm3"]*np.sqrt(ratio1 + ratio2)
     
         np.seterr(**old_settings)
     
@@ -433,13 +415,7 @@ class NdpData():
         """
         Bin channels from ndp.detector
         """
-    
-        # Note that the last bin is not handled correctly as it will not necessarily have
-        # the same number of channels as the other bins. To fix this would involve
-        # some time and code testing. Assuming that the last bin is never interesting, but
-        # perhaps we should eventually fix this just in case.
-        #
-        # Fix is in recalculating bin_size each time, or at least in the final bin.
+
         num_channels = self.instrument["Num Channels"]
         num_bins = int(num_channels/bin_size)+1
                 
@@ -507,51 +483,51 @@ class NdpData():
         return
     
     
-    def bin_channels(self, bin_size=21):
-        """
-        Bin channels from ndp.detector
-        """
+    # def bin_channels(self, bin_size=21):
+    #     """
+    #     Bin channels from ndp.detector
+    #     """
     
-        # Note that the last bin is not handled correctly as it will not necessarily have
-        # the same number of channels as the other bins. To fix this would involve
-        # some time and code testing. Assuming that the last bin is never interesting, but
-        # perhaps we should eventually fix this just in case.
-        #
-        # Fix is in recalculating bin_size each time, or at least in the final bin.
-        num_channels = self.instrument["Num Channels"]
-        num_bins = int(num_channels/bin_size)+1
+    #     # Note that the last bin is not handled correctly as it will not necessarily have
+    #     # the same number of channels as the other bins. To fix this would involve
+    #     # some time and code testing. Assuming that the last bin is never interesting, but
+    #     # perhaps we should eventually fix this just in case.
+    #     #
+    #     # Fix is in recalculating bin_size each time, or at least in the final bin.
+    #     num_channels = self.instrument["Num Channels"]
+    #     num_bins = int(num_channels/bin_size)+1
                 
-        self.detector["Channels Binned"] = np.arange(num_bins)
-        self.detector["Energy Binned"] = np.zeros(num_bins)
-        self.detector["Depth Binned"] = np.zeros(num_bins)
-        self.data["Sam Dat"]["Counts Binned"] = np.zeros(num_bins)
-        self.data["Sam Dat"]["Atoms/cm2 Binned"] = np.zeros(num_bins)
-        self.data["Sam Dat"]["Atoms/cm2 Binned Uncert"] = np.zeros(num_bins)
-        self.data["Sam Dat"]["Atoms/cm3 Binned"] = np.zeros(num_bins)
-        self.data["Sam Dat"]["Atoms/cm3 Binned Uncert"] = np.zeros(num_bins)
+    #     self.detector["Channels Binned"] = np.arange(num_bins)
+    #     self.detector["Energy Binned"] = np.zeros(num_bins)
+    #     self.detector["Depth Binned"] = np.zeros(num_bins)
+    #     self.data["Sam Dat"]["Counts Binned"] = np.zeros(num_bins)
+    #     self.data["Sam Dat"]["Atoms/cm2 Binned"] = np.zeros(num_bins)
+    #     self.data["Sam Dat"]["Atoms/cm2 Binned Uncert"] = np.zeros(num_bins)
+    #     self.data["Sam Dat"]["Atoms/cm3 Binned"] = np.zeros(num_bins)
+    #     self.data["Sam Dat"]["Atoms/cm3 Binned Uncert"] = np.zeros(num_bins)
     
-        uncert2_1 = np.power(self.data["Sam Dat"]["Atoms/cm2 Uncert"],2)
-        uncert2_2 = np.power(self.data["Sam Dat"]["Atoms/cm3 Uncert"],2)
+    #     uncert2_1 = np.power(self.data["Sam Dat"]["Atoms/cm2 Uncert"],2)
+    #     uncert2_2 = np.power(self.data["Sam Dat"]["Atoms/cm3 Uncert"],2)
     
-        for bin in range(num_bins-1):
-            lo = bin*bin_size
-            hi = (bin+1)*bin_size
-            if hi > num_channels:
-                hi = num_channels
-                bin_size = hi - lo
-            self.detector["Energy Binned"][bin] = np.median(self.detector["Energy"][lo:hi])
-            self.detector["Depth Binned"][bin] = np.median(self.detector["Corr Depth"][lo:hi])
-            self.data["Sam Dat"]["Counts Binned"][bin] = np.average(self.data["Sam Dat"]["Counts"][lo:hi])
-            self.data["Sam Dat"]["Atoms/cm2 Binned"][bin] = \
-                np.average(self.data["Sam Dat"]["Atoms/cm2"][lo:hi])
-            self.data["Sam Dat"]["Atoms/cm2 Binned Uncert"][bin] = \
-                math.sqrt(np.sum(uncert2_1[lo:hi]))/bin_size
-            self.data["Sam Dat"]["Atoms/cm3 Binned"][bin] = \
-                np.average(self.data["Sam Dat"]["Atoms/cm3"][lo:hi])
-            self.data["Sam Dat"]["Atoms/cm3 Binned Uncert"][bin] = \
-                math.sqrt(np.sum(uncert2_2[lo:hi]))/bin_size
+    #     for bin in range(num_bins-1):
+    #         lo = bin*bin_size
+    #         hi = (bin+1)*bin_size
+    #         if hi > num_channels:
+    #             hi = num_channels
+    #             bin_size = hi - lo
+    #         self.detector["Energy Binned"][bin] = np.median(self.detector["Energy"][lo:hi])
+    #         self.detector["Depth Binned"][bin] = np.median(self.detector["Corr Depth"][lo:hi])
+    #         self.data["Sam Dat"]["Counts Binned"][bin] = np.average(self.data["Sam Dat"]["Counts"][lo:hi])
+    #         self.data["Sam Dat"]["Atoms/cm2 Binned"][bin] = \
+    #             np.average(self.data["Sam Dat"]["Atoms/cm2"][lo:hi])
+    #         self.data["Sam Dat"]["Atoms/cm2 Binned Uncert"][bin] = \
+    #             math.sqrt(np.sum(uncert2_1[lo:hi]))/bin_size
+    #         self.data["Sam Dat"]["Atoms/cm3 Binned"][bin] = \
+    #             np.average(self.data["Sam Dat"]["Atoms/cm3"][lo:hi])
+    #         self.data["Sam Dat"]["Atoms/cm3 Binned Uncert"][bin] = \
+    #             math.sqrt(np.sum(uncert2_2[lo:hi]))/bin_size
             
-        return
+    #     return
     
     def saveAtoms(self, path, filename, data_cols):
         """
