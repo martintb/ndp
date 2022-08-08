@@ -21,7 +21,9 @@ class schema():
     def __init__(self):
        self.schema = {
         'Operations' : ['Load', 'Bin', 'Save'],
-        'Eval' : 'TRIM',
+        'Eval' : {
+            'Type': 'TRIM',
+            },            
         'Load' : ['Sam Dat'],
         'Norm' : [],
         'Corr' : [],
@@ -42,10 +44,7 @@ class schema():
             'Path' : '',
             'Filename' : 'ndp_default.csv'
         },
-        'TRIM' : {
-            'Path' : '',
-            'Files' : ''
-        },
+        'TRIM' : [],
         'Sam Dat' : {
             'Path' : '',
             'Files' : ''
@@ -116,5 +115,31 @@ class schema():
         
         dirlist = os.listdir(path)
         return [x for x in dirlist if tag in x]
+
+    
+    def add_TRIMlayer(self, path, tag):
+        """
+        Add a material layer to the TRIM schema. Function  modifies a schema data object.
         
+        Parameters
+        ----------
+        path : string
+            Path to the TRIM files defining the energy to depth relationship for a given material layer
+        tag : string
+            Text common to all filenames of interest. Use a null string if all 
+            files in a directory are desired.
+
+        Returns
+        -------
+        None
+
+        """
+        
+        new_layer = {
+            'Path' : path,
+            'Files' : self.get_filelist(path,tag)
+        }
+        self.schema['TRIM'].append(new_layer)
+        
+
         
