@@ -1,0 +1,14 @@
+{
+    "Configuration": "Default",
+    "Beam Energy": 1472.35,
+    "Num Channels": 4096,
+    "Zero Channel": 2077,
+    "Mon Peak Channels": [
+        1900,
+        2901
+    ],
+    "Calib Coeffs": [
+        0.7144,
+        -12.45
+    ]
+}

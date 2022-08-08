@@ -12,7 +12,7 @@ import json
 from datetime import datetime
 
 
-class NdpData():
+class ndpData():
     """
     Modules that process neutron depth profiling (NDP) data.
     schema = a JSON file with parameters describing input files and other parameters.
@@ -50,6 +50,11 @@ class NdpData():
             "dDepth Uncert" : np.zeros(4096)
         }
         
+        self.TRIM = {
+            'Type' : 'TRIM',
+            'Layers' : [],
+            'Coeffs' : np.zeros(3),
+            }
 
         self.data = {
             "Sam Dat" : {
@@ -100,13 +105,10 @@ class NdpData():
                 "Real Time" : 0.0,
                 "Operations" : []
             },
-            "TRIM" : {
-                "Files" : []
-            },
         }
         
     
-    def readconfig(self, config_filename):
+    def readconfig(self, config_filename="instrument.dat"):
         """
         Read NDPReduce configuration file
         """
@@ -116,7 +118,7 @@ class NdpData():
         return
 
 
-    def runschema(self, schemafilename = "schema.txt", configfilename = "config.json"):
+    def runschema(self, schemafilename = "schema.json"):
         """
         Run the operations listed in the schema file
         """
@@ -128,9 +130,12 @@ class NdpData():
         
         for op in ops:
             if 'Eval' in op:
-                self.data['TRIM']["Path"] = self.schema['TRIM']['Path']
-                self.data['TRIM']["Files"] = self.schema['TRIM']['Files'] 
-                self.evalTRIM(self.schema['TRIM']['Path'])
+                kev, depth, mat = self.evalTRIM(self.schema['TRIM'], self.instrument['Beam Energy'])
+                self.TRIM['Layers'] = self.schema['TRIM']
+                self.TRIM['Coeffs'] = self.fit_TRIM(kev, depth)
+                self.TRIM['Energy'] = kev
+                self.TRIM['Depth'] = depth
+                self.TRIM['Material'] = mat
                 self.chan2depth()
             if 'Load' in op:
                 for dt in self.schema['Load']:
@@ -223,61 +228,118 @@ class NdpData():
         return
     
     
-    def evalTRIM(self, path):
-    
-        numfiles = len(self.data["TRIM"]["Files"])
-        self.data["TRIM"]["Median KeV"] = np.zeros(numfiles+1)
-        self.data["TRIM"]["Thick"] = np.zeros(numfiles+1)
-        self.data["TRIM"]["Median KeV"][0] = self.instrument["Beam Energy"]
-        self.data["TRIM"]["Thick"][0] = 0.0
-        self.data["TRIM"]["Coeffs"] = np.zeros(3)
+    def evalTRIM(self, trim_list, beam_energy):
+        """
+        Read in blocks of TRIM simulation data files to calculate polynomial
+        coefficients that relate depth to energy of an ion escaping a sample
+        of multiple material layers
+
+        Parameters
+        ----------
+        trim_list : ordered list of data defining a material layer. Each list item
+                    is a dictionary with keys <Path> and <Tag>. 
         
-        # Regex to extract layer thickness in Angstroms from TRIM header (line 10)
-        # p = re.compile(r'\(\s*[0-9]+\s*A\)')
-    
-        
+        Returns
+        -------
+        data object containing trim_list and an additional 
+
+        """
+
+        # Regex to extract the material label from TRIM header (line 10)
+        p1 = re.compile(r'\>.*\)')    
         # Regex to extract energy from the third or fourth column of the TRIM file
-        p = re.compile(r'\.[0-9]*E\+[0-9]*')
-        
+        p2 = re.compile(r'\.[0-9]*E\+[0-9]*')
         # Regex to extract depth from the fourth or fifth column of the TRIM file
-        q = re.compile(r'[0-9]*E-[0-9]*')
+        p3 = re.compile(r'[0-9]*E-[0-9]*')
         
-        
+
         # TRIM calculations are done for each material layer, with multiple
         # files within a layer. TRIM provides the relative energy and depth to 
         # the top interface. Offset determines the energy and depth of the
         # top interface of the current layer.
-        
         ev_offset = 0.0
-        depth_offset = 0.0
-        for filenum in range(numfiles):
-            trim_file = path + self.data["TRIM"]["Files"][filenum]
-    
-            with open(trim_file) as f:
-                lines = f.readlines()
-                num_lines = len(lines)-12
-                ev = np.zeros(num_lines)
-                depth = np.zeros(num_lines)
-    
-                i=0
-                for line in lines[12:]:        
-                    m = p.search(line)
-                    ev[i] = float(m.group()) + ev_offset
-                    m = q.search(line)
-                    depth[i] = float(m.group()) + depth_offset
-                    i += 1
-            
-            self.data["TRIM"]["Median KeV"][filenum+1] = np.median(ev)/1000
-            self.data["TRIM"]["Thick"][filenum+1] = np.average(depth)/10
+        depth_offset = 0.0        
+        energy = np.array([beam_energy])
+        thick = np.array([0.0])
+        coeffs = np.zeros(3)
+        material = []
         
-        # Fit a polynomial to KeV vs. Thickness, get the coefficients.
-        self.data["TRIM"]["Coeffs"] = np.polyfit(\
-            self.data["TRIM"]["Median KeV"], self.data["TRIM"]["Thick"], 2)
+        for layer in trim_list:
+            for filename in layer['Files']:
+                trim_file = layer['Path'] + filename
+        
+                with open(trim_file) as f:
+                    lines = f.readlines()
+                    num_lines = len(lines)-12
+                    ev = np.zeros(num_lines)
+                    depth = np.zeros(num_lines)
+                    m = p1.search(lines[9])
+                    material.append(m.group()[1:])
+                    i=0
+                    for line in lines[12:]:        
+                        m = p2.search(line)
+                        ev[i] = float(m.group())/1000.0 - ev_offset
+                        m = p3.search(line)
+                        depth[i] = float(m.group())/10 + depth_offset
+                        i += 1
+                    
+                energy = np.append(energy, np.median(ev))
+                thick = np.append(thick, np.average(depth))
+
+            ev_offset = energy[0] - np.min(energy)
+            depth_offset = thick[0] + np.max(thick)
+                
+        return energy, thick, material
+    
+    
+    def fit_TRIM(self, energy, thick):
+        """
+        Fit a polynomial to thickness and energy data and return the three coefficients
+        
+        Parameters
+        ----------
+        median_KeV : Escape energy of each sub-layer
+            DESCRIPTION.
+        thick : 1-D numpy array
+            Thickness of each sub-layer
+
+        Returns
+        -------
+        1x3 numpy array of coeffiients for the 2nd order polynomial fit
+
+        """
+        return np.polyfit(energy, thick, deg=2)
+        
+
+    def chan2depth(self):
+
+    
+        # These values change infrequently and are provided by the instrument scientist
+        m, b = self.instrument["Calib Coeffs"]
+        self.detector["Energy"] = (m*self.detector["Channels"]) + b
+    
+        # These values are derived from SRIM/TRIM, freeware used to calculate energy of generated ions in matter
+        # Depth is in nanometers
+        a, b, c = self.TRIM["Coeffs"]
+        self.detector["Depth"] = a*np.power(self.detector["Energy"],2) \
+            + b*self.detector["Energy"] + c
+        
+        # Zero channel is defined through the experimental setup
+        zerochan = self.instrument["Zero Channel"]
+        self.detector["Corr Depth"] = self.detector["Depth"] \
+            - self.detector["Depth"][zerochan]
+        
+        # Del Depth in centimeters
+        self.detector["Del Depth"] = np.zeros(len(self.detector["Corr Depth"]))
+        for x in range(len(self.detector["Corr Depth"])-1):
+            self.detector["Del Depth"][x] = 1e-7*(self.detector["Corr Depth"][x-1] - self.detector["Corr Depth"][x])
+    
+        self.detector["Del Depth Uncert"] = 0.05 * self.detector["Del Depth"]
         
         return
     
-    
-    
+           
+
     def deadtime(self, dt):
         """
         Returns a copy of ndp.data with deadtime corrected counts for each of the
@@ -452,83 +514,8 @@ class NdpData():
         return
     
     
-    def chan2depth(self):
-        """
-        Convert channels to energy and then to a relative depth with uncertainties
-        Depth is based on the TRIM simulation but will have the incorrect origin
-        """
-    
-        # These values change infrequently and are provided by the instrument scientist
-        m, b = self.instrument["Calib Coeffs"]
-        self.detector["Energy"] = (m*self.detector["Channels"]) + b
-    
-        # These values are derived from SRIM/TRIM, freeware used to calculate energy of generated ions in matter
-        # Depth is in nanometers
-        a, b, c = self.data["TRIM"]["Coeffs"]
-        self.detector["Depth"] = a*np.power(self.detector["Energy"],2) \
-            + b*self.detector["Energy"] + c
-        
-        # Zero channel is defined through the experimental setup
-        zerochan = self.instrument["Zero Channel"]
-        self.detector["Corr Depth"] = self.detector["Depth"] \
-            - self.detector["Depth"][zerochan]
-        
-        # Del Depth in centimeters
-        self.detector["Del Depth"] = np.zeros(len(self.detector["Corr Depth"]))
-        for x in range(len(self.detector["Corr Depth"])-1):
-            self.detector["Del Depth"][x] = 1e-7*(self.detector["Corr Depth"][x-1] - self.detector["Corr Depth"][x])
-    
-        self.detector["Del Depth Uncert"] = 0.05 * self.detector["Del Depth"]
-        
-        return
-    
-    
-    # def bin_channels(self, bin_size=21):
-    #     """
-    #     Bin channels from ndp.detector
-    #     """
-    
-    #     # Note that the last bin is not handled correctly as it will not necessarily have
-    #     # the same number of channels as the other bins. To fix this would involve
-    #     # some time and code testing. Assuming that the last bin is never interesting, but
-    #     # perhaps we should eventually fix this just in case.
-    #     #
-    #     # Fix is in recalculating bin_size each time, or at least in the final bin.
-    #     num_channels = self.instrument["Num Channels"]
-    #     num_bins = int(num_channels/bin_size)+1
-                
-    #     self.detector["Channels Binned"] = np.arange(num_bins)
-    #     self.detector["Energy Binned"] = np.zeros(num_bins)
-    #     self.detector["Depth Binned"] = np.zeros(num_bins)
-    #     self.data["Sam Dat"]["Counts Binned"] = np.zeros(num_bins)
-    #     self.data["Sam Dat"]["Atoms/cm2 Binned"] = np.zeros(num_bins)
-    #     self.data["Sam Dat"]["Atoms/cm2 Binned Uncert"] = np.zeros(num_bins)
-    #     self.data["Sam Dat"]["Atoms/cm3 Binned"] = np.zeros(num_bins)
-    #     self.data["Sam Dat"]["Atoms/cm3 Binned Uncert"] = np.zeros(num_bins)
-    
-    #     uncert2_1 = np.power(self.data["Sam Dat"]["Atoms/cm2 Uncert"],2)
-    #     uncert2_2 = np.power(self.data["Sam Dat"]["Atoms/cm3 Uncert"],2)
-    
-    #     for bin in range(num_bins-1):
-    #         lo = bin*bin_size
-    #         hi = (bin+1)*bin_size
-    #         if hi > num_channels:
-    #             hi = num_channels
-    #             bin_size = hi - lo
-    #         self.detector["Energy Binned"][bin] = np.median(self.detector["Energy"][lo:hi])
-    #         self.detector["Depth Binned"][bin] = np.median(self.detector["Corr Depth"][lo:hi])
-    #         self.data["Sam Dat"]["Counts Binned"][bin] = np.average(self.data["Sam Dat"]["Counts"][lo:hi])
-    #         self.data["Sam Dat"]["Atoms/cm2 Binned"][bin] = \
-    #             np.average(self.data["Sam Dat"]["Atoms/cm2"][lo:hi])
-    #         self.data["Sam Dat"]["Atoms/cm2 Binned Uncert"][bin] = \
-    #             math.sqrt(np.sum(uncert2_1[lo:hi]))/bin_size
-    #         self.data["Sam Dat"]["Atoms/cm3 Binned"][bin] = \
-    #             np.average(self.data["Sam Dat"]["Atoms/cm3"][lo:hi])
-    #         self.data["Sam Dat"]["Atoms/cm3 Binned Uncert"][bin] = \
-    #             math.sqrt(np.sum(uncert2_2[lo:hi]))/bin_size
-            
-    #     return
-    
+
+ 
     def saveAtoms(self, path, filename, data_cols):
         """
         Write six column CSV for atoms/cm2 and atoms/cm3

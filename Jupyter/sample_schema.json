@@ -1,0 +1,136 @@
+{
+    "Operations": [
+        "Eval",
+        "Load",
+        "Norm",
+        "Correct",
+        "Absolute",
+        "Bin",
+        "Save"
+    ],
+    "Eval": [
+        "TRIM"
+    ],
+    "Load": [
+        "Sam Dat",
+        "Sam Mon",
+        "Bgd Dat",
+        "Bgd Mon",
+        "Ref Dat",
+        "Ref Mon"
+    ],
+    "Norm": [
+        "Sam",
+        "Ref",
+        "Bgd"
+    ],
+    "Corr": [
+        "Sam",
+        "Ref"
+    ],
+    "Absolute": {
+        "Ref Atom": "B",
+        "Ref Cross Sec": 3600.48,
+        "Ref Abundance": 0.196,
+        "Ref Conc": 5220000000000000.0,
+        "Ref Conc Uncert": 30000000000000.0,
+        "Atom": "B",
+        "Cross Sec": 3600.48,
+        "Abundance": 0.196,
+        "Branch Frac": 0.94
+    },
+    "Bin": 21,
+    "Save": {
+        "Columns": [
+            "Channels",
+            "Energy",
+            "Depth",
+            "Counts",
+            "Atoms/cm2",
+            "Atoms/cm2 Uncert",
+            "Atoms/cm3",
+            "Atoms/cm3 Uncert"
+        ],
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats",
+        "Filename": "heat0x.csv"
+    },
+    "TRIM": [
+        {
+            "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/TRIM/",
+            "Files": [
+                "10 nm Cr2O3 alpha.txt",
+                "100 nm Cr2O3 alpha.txt",
+                "150 nm Cr2O3 alpha.txt",
+                "200 nm Cr2O3 alpha.txt",
+                "25 nm Cr2O3 alpha.txt",
+                "300 nm Cr2O3 alpha.txt",
+                "400 nm Cr2O3 alpha.txt",
+                "50 nm Cr2O3 alpha.txt"
+            ]
+        }
+    ],
+    "Sam Dat": {
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/Sample Data Cr2O3/Lynx 1 - Master Data/",
+        "Files": [
+            "190718_Binek_B14115K_1smp_5mm033_022.spe",
+            "190718_Binek_B14115K_1smp_5mm033_023.spe",
+            "190718_Binek_B14115K_1smp_5mm033_024.spe",
+            "190718_Binek_B14115K_1smp_5mm033_025.spe",
+            "190718_Binek_B14115K_1smp_5mm033_026.spe",
+            "190718_Binek_B14115K_1smp_5mm033_027.spe",
+            "190718_Binek_B14115K_1smp_5mm033_028.spe",
+            "190718_Binek_B14115K_1smp_5mm033_029.spe",
+            "190718_Binek_B14115K_1smp_5mm033_030.spe",
+            "190718_Binek_B14115K_1smp_5mm033_031.spe"
+        ]
+    },
+    "Sam Mon": {
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/Sample Data Cr2O3/Lynx 3 - Monitor Data/",
+        "Files": [
+            "190718_Binek_B14115K_1smp_5mm035_022.spe",
+            "190718_Binek_B14115K_1smp_5mm035_023.spe",
+            "190718_Binek_B14115K_1smp_5mm035_024.spe",
+            "190718_Binek_B14115K_1smp_5mm035_025.spe",
+            "190718_Binek_B14115K_1smp_5mm035_026.spe",
+            "190718_Binek_B14115K_1smp_5mm035_027.spe",
+            "190718_Binek_B14115K_1smp_5mm035_028.spe",
+            "190718_Binek_B14115K_1smp_5mm035_029.spe",
+            "190718_Binek_B14115K_1smp_5mm035_030.spe",
+            "190718_Binek_B14115K_1smp_5mm035_031.spe"
+        ]
+    },
+    "Bgd Dat": {
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/Background Al2O3/Lynx 1 - Master Data/",
+        "Files": [
+            "190810_Binek_Blnk_Cr2O3_3mm036.spe",
+            "190810_Binek_Blnk_Cr2O3_3mm036_001.spe",
+            "190810_Binek_Blnk_Cr2O3_3mm036_002.spe",
+            "190810_Binek_Blnk_Cr2O3_3mm036_003.spe"
+        ]
+    },
+    "Bgd Mon": {
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/Background Al2O3/Lynx 3 - Monitor Data/",
+        "Files": [
+            "190810_Binek_Blnk_Cr2O3_3mm038.spe",
+            "190810_Binek_Blnk_Cr2O3_3mm038_001.spe",
+            "190810_Binek_Blnk_Cr2O3_3mm038_002.spe",
+            "190810_Binek_Blnk_Cr2O3_3mm038_003.spe"
+        ]
+    },
+    "Ref Dat": {
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/Reference Data N6/Lynx 1 - Master Data/",
+        "Files": [
+            "190731_Binek_N6c_3mm018.spe",
+            "190731_Binek_N6c_3mm018_001.spe",
+            "190731_Binek_N6c_3mm018_002.spe"
+        ]
+    },
+    "Ref Mon": {
+        "Path": "C:\\Users\\rljones\\Documents\\NDP Data\\Cr2O3 two heats/Reference Data N6/Lynx 3 - Monitor Data/",
+        "Files": [
+            "190731_Binek_N6c_3mm020.spe",
+            "190731_Binek_N6c_3mm020_001.spe",
+            "190731_Binek_N6c_3mm020_002.spe"
+        ]
+    }
+}
