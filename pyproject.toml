@@ -9,7 +9,7 @@ authors = [
 ]
 license = {file = "LICENSE"}
 readme = "README.md"
-requires-python = ">=3.7" #3.9 needed for importlib.resources
+requires-python = ">=3.9" #3.9 needed for importlib.resources
 
 keywords = ["materials science", "neutron", "physics", "measurement"]
 
@@ -50,6 +50,8 @@ test = [
   "flake8",
   "pytest",
   "coverage",
+  "build",
+  "twine",
   ]
 
 [project.urls]
