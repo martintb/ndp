@@ -1,0 +1,2 @@
+include src/ndp/jupyter/*ipynb
+include src/ndp/example_files/*

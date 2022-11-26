@@ -1,3 +1,5 @@
 .ipynb_checkpoints/
+dist/
 *pyc
 *egg-info*
+.coverage
