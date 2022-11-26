@@ -54,11 +54,11 @@ build = [
   ]
 
 [project.urls]
-homepage = "https://github.com/ronjones43/ndp"
-repository = "https://github.com/ronjones43/ndp"
+homepage = "https://github.com/martintb/ndp"
+repository = "https://github.com/martintb/ndp"
 
 [build-system]
-requires = [
+requires =[
     "setuptools",
 ]
 build-backend = "setuptools.build_meta"
