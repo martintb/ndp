@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+''' Module function for easy access to repository notebooks
+'''
 from importlib.resources import files
 import shutil
 import os
