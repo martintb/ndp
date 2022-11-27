@@ -5,7 +5,7 @@ Or, more directly, how to update the PyPI file.
 
 ## 1. Bump the version number in pyproject.toml
 
-This is important and the PyPI upload will fail if you don't do this. You can update the this file either on GitHub or you can push the changes from your local machine. 
+This is important and the PyPI upload will fail if you don't do this. You can update  pyproject.toml either on GitHub or you can push the changes from your local machine. 
 
 This package uses semantic versioning. From py-pkgs.org:
 
@@ -17,5 +17,13 @@ This package uses semantic versioning. From py-pkgs.org:
 
 ## 2. Create a release on GitHub
 
-Navigate to the repository on GitHub and fine the 'Releases' section in the middle left of the repostories home page. 
+Navigate to the repository releases [homepage](https://github.com/martintb/ndp/releases). Click the "Draft a New Release Button". 
+
+Now, fill out the release form. Give the release a tag associated with the release version number i.e., if the version is 0.1.0 then tag it with v0.1.0. Write a short release message and then click "Generate Release Notes". 
+
+Once you're finished click "Publish Release"
+
+## 3. Wait for the GitHub Actions runner to finish
+
+This can take 5-10 minutes to complete but can be monitored from the [Actions menu](https://github.com/martintb/ndp/actions)
 
