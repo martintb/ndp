@@ -1,6 +1,6 @@
 [project]
 name = "ndp"
-version = "0.0.1"
+version = "0.0.2"
 description = "A python tool for reducing neutron depth profiling measurements"
 authors = [
     {name = "Jamie Weaver", email="jamie.weaver@nist.gov"},
